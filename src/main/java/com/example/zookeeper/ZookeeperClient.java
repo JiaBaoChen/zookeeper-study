@@ -4,8 +4,10 @@ import com.example.zookeeper.utils.PathUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.zookeeper.*;
+import org.apache.zookeeper.data.Stat;
 
 import java.io.UnsupportedEncodingException;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
 /**
@@ -176,6 +178,175 @@ public class ZookeeperClient {
         return create(nodePath, nodeValue, CreateMode.EPHEMERAL_SEQUENTIAL);
     }
 
+    /**
+     * 删除叶子节点，zookeeper中只能先删除叶子节点
+     * 如果给定的版本为-1，则它与任何节点的版本都匹配
+     *
+     * @param nodePath
+     * @param version
+     */
+    public void deleteNode(String nodePath, int version) {
+
+
+    }
+
+
+    /**
+     * 获取指定节点下的所有子节点
+     *
+     * @param nodePath 指定节点路径
+     * @param watch    是否需要注册watch,如果ture,那么zookeeper客户端会自动使用上下文中的那个默认watcher
+     * @return
+     */
+    public List<String> getChildren(String nodePath, boolean watch) {
+        try {
+            return zooKeeper.getChildren(nodePath, watch);
+        } catch (KeeperException | InterruptedException e) {
+            log.error("", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * 获取指定节点下的所有子节点
+     *
+     * @param nodePath 指定节点路径
+     * @param watcher  注册的watcher,订阅子节点列表变化的通知，一旦在本次节点获取之后，
+     *                 子节点列表发生变更的话（当有子节点添加或者被删除），那么就会向客户端发送通知
+     *                 发送 一个NodeChildrenChanged 类型的事件通知
+     * @return
+     */
+    public List<String> getChildren(String nodePath, Watcher watcher) {
+        try {
+            return zooKeeper.getChildren(nodePath, event -> {
+                if (event.getType() == Watcher.Event.EventType.NodeChildrenChanged) {
+                    log.info("{} 的子节点列表发生了改变", nodePath);
+                    watcher.process(event);
+                    getChildren(nodePath, watcher);
+                }
+            });
+        } catch (KeeperException | InterruptedException e) {
+            log.error("", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * 异步API获取子节点
+     *
+     * @param nodePath
+     * @param watcher
+     * @param cb       异步获取子节点
+     * @param ctx      调用方法示例：
+     *                 zookeeperClient.getChildren("/ticketNo", event -> {},
+     *                 new AsyncCallback.ChildrenCallback() {
+     * @Override public void processResult(int rc, String path, Object ctx, List<String> children) {
+     * System.out.println("rc=="+rc);
+     * System.out.println("path=="+path);
+     * System.out.println("ctx=="+ctx);
+     * children.forEach(s -> {
+     * System.out.println("子节点=="+s);
+     * });
+     * }
+     * }, null);
+     */
+    public void getChildren(String nodePath, Watcher watcher, AsyncCallback.ChildrenCallback cb, Object ctx) {
+        zooKeeper.getChildren(nodePath, event -> {
+            if (event.getType() == Watcher.Event.EventType.NodeChildrenChanged) {
+                log.info("{} 的子节点列表发生了改变", nodePath);
+                watcher.process(event);
+                getChildren(nodePath, watcher, cb, ctx);
+            }
+        }, cb, ctx);
+
+    }
+
+
+    /**
+     * 更新取节点数据
+     *
+     * @param nodePath 指定节点
+     * @param data     需要更新的数据
+     * @param version  版本号  -1 代表当前最新版本  如果数据节点的更新操作没有原子性要求，那么就可以用-1
+     * @return Stat 返回一个数据节点的节点状态信息
+     */
+    public Stat setData(String nodePath, byte[] data, int version) {
+        try {
+            return zooKeeper.setData(nodePath, data, version);
+        } catch (KeeperException | InterruptedException e) {
+            log.error("", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * 更新取节点数据  异步
+     *
+     * @param nodePath
+     * @param data
+     * @param version
+     * @param statCallback
+     * @param obj
+     */
+
+    public void setData(String nodePath, byte[] data, int version, AsyncCallback.StatCallback statCallback, Object
+            obj) {
+        zooKeeper.setData(nodePath, data, version, statCallback, obj);
+    }
+
+
+    /**
+     * @param nodePath
+     * @param watcher  注册监听，节点状态发生变更会通知客户端
+     * @return
+     */
+    public byte[] getData(String nodePath, Watcher watcher) {
+        try {
+            return zooKeeper.getData(nodePath, event -> {
+                if (event.getType() == Watcher.Event.EventType.NodeDataChanged) {
+                    log.info("{} 节点状态发生了变更", nodePath);
+                    watcher.process(event);
+                    getData(nodePath, watcher);
+                }
+            }, new Stat());
+        } catch (KeeperException | InterruptedException e) {
+            log.error("", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * 判断节点是否存在
+     * 还可以在调用的时候 注册Watcher监听，一旦节点被创建或删除或是数据被更新，都会通知客户端
+     *
+     * @param nodePath
+     * @param watcher
+     * @return
+     */
+    public Stat exists(String nodePath, Watcher watcher) {
+
+        try {
+            return zooKeeper.exists(nodePath, event -> {
+                if (event.getType() == Watcher.Event.EventType.NodeCreated) {
+                    log.info("{} 节点被创建", nodePath);
+                } else if (event.getType() == Watcher.Event.EventType.NodeDeleted) {
+                    log.info("{} 节点被删除", nodePath);
+                } else if (event.getType() == Watcher.Event.EventType.NodeDataChanged) {
+                    log.info("{} 节点数据发生了改变", nodePath);
+                }
+                if (event != null) {
+                    watcher.process(event);
+                    exists(nodePath, watcher);
+                }
+            });
+        } catch (KeeperException | InterruptedException e) {
+            log.error("", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+
+//    public List<String> getChildren(String nodePath, Watcher watcher,){}
 
     /**
      * 递归创建节点 zookeeper 创建节点 路径必须是绝对路径 以"/开头的"
