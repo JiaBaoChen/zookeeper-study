@@ -36,6 +36,10 @@ public class ZookeeperClient {
     private ZookeeperClient() {
     }
 
+//    private static class SingletonInne {
+//        private static ZookeeperClient zookeeperClient = new ZookeeperClient();
+//    }
+
     /**
      * 创建会话
      *
@@ -62,7 +66,19 @@ public class ZookeeperClient {
             log.error("", e);
             throw new RuntimeException(e);
         }
+        System.out.println("zooKeeper==========="+zookeeperClient.zooKeeper.hashCode());
         return zookeeperClient;
+    }
+
+    /**
+     * 给会话添加权限
+     *
+     * @param scheme
+     * @param auth
+     */
+    public void addAuthInfo(String scheme,
+                            byte[] auth) {
+        zooKeeper.addAuthInfo(scheme, auth);
     }
 
 
